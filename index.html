@@ -88,11 +88,17 @@ header{height:62px;background:var(--surface);border-bottom:1px solid var(--borde
 .sec-line{flex:1;height:1px;background:var(--border)}
 
 /* scenarios */
-.scenarios{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-.scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh);min-width:170px;flex:1 1 180px;display:flex;flex-direction:column;gap:6px}
-.scenario-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
-.scenario-value{font-size:16px;font-weight:700;line-height:1.2;color:var(--ink)}
-.scenario-sub{font-size:11px;color:var(--ink3)}
+.scenarios{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--sh);min-width:190px;flex:1 1 210px;display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:hidden}
+.scenario-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3);margin-bottom:2px}
+.scenario-desc{font-size:11px;color:var(--ink3);line-height:1.4;margin-bottom:6px}
+.scenario-list{display:flex;flex-direction:column;gap:5px;overflow-y:auto;flex:1;min-height:140px}
+.scenario-row{display:flex;justify-content:space-between;gap:6px;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border2);cursor:pointer;transition:background .15s}
+.scenario-row:last-child{border-bottom:none}
+.scenario-row:hover{background:var(--s2)}
+.scenario-client{color:var(--accent);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.scenario-status{font-size:10px;font-weight:700;color:var(--ink3);min-width:30px;text-align:right}
+.scenario-footer{font-size:10px;color:var(--ink3);margin-top:4px;padding-top:4px;border-top:1px solid var(--border2)}
 
 /* client table */
 .client-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px;box-shadow:var(--sh)}
@@ -482,15 +488,46 @@ function renderScenarios(){
   const root=document.getElementById('scenarios');
   if(!root)return;
 
-  const recList=analises.filter(a=>a.rec!=null).sort((a,b)=>a.rec-b.rec).slice(0,3);
-  const semList=analises.filter(a=>a.sem!=null).sort((a,b)=>b.sem-a.sem).slice(0,3);
-  const statusR=analises.filter(a=>a.st==='r').slice(0,3);
-  const trendV=analises.filter(a=>a.tV!=='e').slice(0,3);
-  const trendP=analises.filter(a=>a.tP!=='e').slice(0,3);
+  const scenarios=[
+    {
+      title:'1. Menores Intervalos',
+      desc:'Clientes comprando com mais frequência',
+      data:analises.filter(a=>a.rec!=null).sort((a,b)=>a.rec-b.rec).slice(0,6),
+      col:(a)=>a.rec?F.dias(a.rec):'—'
+    },
+    {
+      title:'2. Maior Dias Sem Comprar',
+      desc:'Últimos a fazer pedido (risco)',
+      data:analises.filter(a=>a.sem!=null).sort((a,b)=>b.sem-a.sem).slice(0,6),
+      col:(a)=>a.sem?`${a.sem}d`:'—'
+    },
+    {
+      title:'3. Status Crítico (Vermelho)',
+      desc:'Passou do prazo de recompra',
+      data:analises.filter(a=>a.st==='r').slice(0,6),
+      col:(a)=>'🔴'
+    },
+    {
+      title:'4. Valor Crescente',
+      desc:'Clientes comprando mais valor',
+      data:analises.filter(a=>a.tV==='c').slice(0,6),
+      col:(a)=>'↑'
+    },
+    {
+      title:'5. Quantidade Crescente',
+      desc:'Clientes comprando mais peças',
+      data:analises.filter(a=>a.tP==='c').slice(0,6),
+      col:(a)=>'↑'
+    }
+  ];
 
-  const makeCard=(title,sub,items,value)=>`<div class="scenario-card"><div class="scenario-title">${title}</div><div class="scenario-value">${value}</div><div class="scenario-sub">${sub}</div></div>`;
+  root.innerHTML=scenarios.map(s=>{
+    const rows=s.data.map(a=>`<div class="scenario-row" data-id="${a.id}"><span class="scenario-client">${a.nome}</span><span class="scenario-status">${s.col(a)}</span></div>`).join('');
+    const show=s.data.length>6?`<div class="scenario-footer">Mostrar ${analises.filter(_=>_.id in Object.fromEntries(s.data.map(a=>[a.id,1]))).length} clientes</div>`:'';
+    return`<div class="scenario-card"><div class="scenario-title">${s.title}</div><div class="scenario-desc">${s.desc}</div><div class="scenario-list">${rows||'<div style="color:var(--ink3);padding:10px 0">Nenhum cliente</div>'}</div>${show}</div>`;
+  }).join('');
 
-  root.innerHTML=`${makeCard('1. Recorrência', 'Menor tempo entre compras', '', recList.length?`${recList[0].nome} (${F.dias(recList[0].rec)})`:'—')}${makeCard('2. Dias sem comprar', 'Maior tempo desde última compra', '', semList.length?`${semList[0].nome} (${semList[0].sem}d)`:'—')}${makeCard('3. Status (r)', 'Passou do prazo', '', statusR.length?`${statusR[0].nome}`:'—')}${makeCard('4. Tendência valor', 'Comprando mais/menos', '', trendV.length?`${trendV[0].nome} (${formatTrend(trendV[0].tV)})`:'—')}${makeCard('5. Tendência peças', 'Comprando mais/menos', '', trendP.length?`${trendP[0].nome} (${formatTrend(trendP[0].tP)})`:'—')}`;
+  root.querySelectorAll('.scenario-row').forEach(el=>el.addEventListener('click',()=>openPanel(el.dataset.id)));
 }
 
 function renderClientTable(){
@@ -511,20 +548,6 @@ function paint(){
 
   renderScenarios();
   renderClientTable();
-
-  const r=analises.filter(a=>a.st==='r').length,y=analises.filter(a=>a.st==='y').length,g=analises.filter(a=>a.st==='g').length;
-  document.getElementById('cr').textContent=r;
-  document.getElementById('cy').textContent=y;
-  document.getElementById('cg').textContent=g;
-  document.getElementById('ib-p').textContent=`${pedidos.length} pedido${pedidos.length!==1?'s':''}`;
-  document.getElementById('ib-c').textContent=`${analises.length} cliente${analises.length!==1?'s':''}`;
-  document.getElementById('ib-u').textContent=`Atualizado ${new Date().toLocaleTimeString('pt-BR')}`;
-  document.getElementById('es').classList.toggle('hidden',analises.length>0);
-}
-
-  document.getElementById('skel').style.display='none';
-  ['s-r','s-y','s-g','s-u'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden');});
-  renderScenarios();
 
   const r=analises.filter(a=>a.st==='r').length,y=analises.filter(a=>a.st==='y').length,g=analises.filter(a=>a.st==='g').length;
   document.getElementById('cr').textContent=r;
