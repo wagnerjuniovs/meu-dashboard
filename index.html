@@ -87,6 +87,17 @@ header{height:62px;background:var(--surface);border-bottom:1px solid var(--borde
 .sec-cnt{font-size:11px;color:var(--ink3);font-weight:500}
 .sec-line{flex:1;height:1px;background:var(--border)}
 
+/* scenarios */
+.scenarios{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px}
+.scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--sh);min-height:180px;display:flex;flex-direction:column}
+.scenario-title{font-size:13px;font-weight:700;margin-bottom:8px}
+.scenario-sub{font-size:11px;color:var(--ink3);margin-bottom:10px;line-height:1.3}
+.scenario-list{display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.scenario-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scenario-item a{color:var(--accent);text-decoration:none;max-width:calc(100% - 110px);overflow:hidden;text-overflow:ellipsis}
+.scenario-item a:hover{text-decoration:underline}
+.scenario-footer{margin-top:auto;font-size:11px;color:var(--ink3)}
+
 /* grid + card */
 .list{display:flex;flex-direction:column;gap:8px}
 .card{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh);padding:16px 18px 14px;cursor:pointer;transition:all .18s;border:1.5px solid transparent;position:relative;overflow:hidden;animation:pop .2s cubic-bezier(.34,1.3,.64,1) both;width:100%;box-sizing:border-box}
@@ -260,6 +271,7 @@ header{height:62px;background:var(--surface);border-bottom:1px solid var(--borde
         </button>
       </div>
 
+      <div id="scenarios" class="scenarios"></div>
       <div id="skel">
         <div class="skel-row">
           <div class="skel-hd"><div class="sk" style="width:8px;height:8px;border-radius:50%"></div><div class="sk" style="width:140px;height:13px"></div></div>
@@ -449,21 +461,40 @@ const SECS={
   'u':{id:'s-u',dot:'var(--ink3)', cls:'gr',lbl:'Histórico Insuficiente',sort:()=>0}
 };
 
+function formatTrend(t){
+  if(t==='c') return '↑ Cresce';
+  if(t==='q') return '↓ Cai';
+  if(t==='e') return '↔ Estável';
+  return '—';
+}
+
+function listItems(items){
+  return items.map(a=>`<div class="scenario-item"><a href="#" data-id="${a.id}">${a.nome}</a><span>${a.st.toUpperCase()}</span></div>`).join('');
+}
+
+function renderScenarios(){
+  const root=document.getElementById('scenarios');
+  if(!root)return;
+
+  const recList=analises.filter(a=>a.rec!=null).sort((a,b)=>a.rec-b.rec).slice(0,6);
+  const semList=analises.filter(a=>a.sem!=null).sort((a,b)=>b.sem-a.sem).slice(0,6);
+  const statusR=analises.filter(a=>a.st==='r').slice(0,6);
+  const trendV=analises.filter(a=>a.tV!=='e').sort((a,b)=>a.tV===b.tV?0:(a.tV==='c'?-1:1)).slice(0,6);
+  const trendP=analises.filter(a=>a.tP!=='e').sort((a,b)=>a.tP===b.tP?0:(a.tP==='c'?-1:1)).slice(0,6);
+
+  const makeCard=(title,sub,items)=>`<div class="scenario-card"><div class="scenario-title">${title}</div><div class="scenario-sub">${sub}</div><div class="scenario-list">${items.length?items.map(a=>`<div class="scenario-item"><a href="#" data-id="${a.id}">${a.nome}</a><span title="${a.st}">${a.st}</span></div>`).join(''):'Sem dados'}</div><div class="scenario-footer">Mostrar até 6</div></div>`;
+
+  root.innerHTML=`${makeCard('1. Recorrência', 'Menor tempo médio entre compras', recList)}${makeCard('2. Dias sem comprar', 'Maior tempo desde última compra', semList)}${makeCard('3. Status (r/y/g)', 'Cliente em vermelho/amarelo/verde', statusR)}${makeCard('4. Tendência em valor', 'Últimos pedidos', trendV)}${makeCard('5. Tendência em peças', 'Últimos pedidos', trendP)}`;
+
+  root.querySelectorAll('.scenario-item a').forEach(link=>{
+    link.addEventListener('click',e=>{e.preventDefault();openPanel(link.dataset.id);});
+  });
+}
+
 function paint(){
   document.getElementById('skel').style.display='none';
-  ['r','y','g','u'].forEach(k=>{
-    const{id,dot,cls,lbl,sort}=SECS[k];
-    const items=analises.filter(a=>a.st===k).sort(sort);
-    const el=document.getElementById(id);
-    if(!items.length){el.classList.add('hidden');return;}
-    el.classList.remove('hidden');
-    const shown = sectionExpanded[k] ? items : items.slice(0, SECTION_LIMIT);
-    const more = items.length > SECTION_LIMIT;
-    el.innerHTML=`<div class="sec-hd"><div class="sec-dot" style="background:${dot}"></div><span class="sec-lbl ${cls}">${lbl}</span><span class="sec-cnt">(${items.length})</span><button class="show-more" data-sec="${k}">${sectionExpanded[k]?'Ver menos':'Ver mais'} (${more?items.length-SECTION_LIMIT:0})</button><div class="sec-line"></div></div><div class="list">${shown.map(cardH).join('')}</div>`;
-    el.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>openPanel(c.dataset.id)));
-    const btn = el.querySelector('.show-more');
-    if(btn){btn.addEventListener('click',()=>{sectionExpanded[k]=!sectionExpanded[k];paint();});}
-  });
+  ['s-r','s-y','s-g','s-u'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden');});
+  renderScenarios();
 
   const r=analises.filter(a=>a.st==='r').length,y=analises.filter(a=>a.st==='y').length,g=analises.filter(a=>a.st==='g').length;
   document.getElementById('cr').textContent=r;
