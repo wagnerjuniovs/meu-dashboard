@@ -492,26 +492,63 @@ document.getElementById('pc').addEventListener('click',()=>{ativo=null;document.
 // ── Parse ─────────────────────────────────────────────────────
 function norm(s){return String(s||'').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.\s_-]+/g,' ').trim()}
 function detectCols(hdr){
-  const M={c:['codcli','cod cli','codigo','cliente codigo','cliente_codigo','cod'],n:['nome','razao social','razaosocial','cliente_razao_social','cliente'],d:['emissao','data','data_emissao','data emissao','dt emissao'],q:['qtde fat','qtde','quantidade','total pecas','pecas','itens','volume','vol'],v:['valor total ped','valor total','valor_total','valor','vl total','total']};
+  const M={c:['codcli','cod cli','codigo','cliente codigo','cliente_codigo','cod','cnpj'],n:['nome','razao social','razaosocial','cliente_razao_social','cliente','social'],d:['emissao','data','data_emissao','data emissao','dt emissao','data emissão','emissão'],q:['qtde fat','qtde','quantidade','total pecas','pecas','itens','volume','vol','quantidade pecas'],v:['valor total ped','valor total','valor_total','valor','vl total','vl','total','valor ped']};
   const r={c:0,n:1,d:2,q:3,v:4};
-  hdr.forEach((h,i)=>{const hn=norm(h);for(const[k,ss]of Object.entries(M)){if(ss.some(s=>hn===s||hn.startsWith(s)||s.startsWith(hn))){r[k]=i;break;}}});
+  console.log('Header row:', hdr);
+  hdr.forEach((h,i)=>{
+    const hn=norm(h);
+    for(const[k,ss]of Object.entries(M)){
+      if(ss.some(s=>hn.includes(s) || s.includes(hn))){
+        r[k]=i;
+        console.log(`Coluna ${k} detectada no índice ${i}: "${h}" -> "${hn}"`);
+        break;
+      }
+    }
+  });
+  console.log('Índices finais:', r);
   return r;
 }
 function pDate(raw){
   if(!raw)return null;
   if(raw instanceof Date)return isNaN(raw.getTime())?null:raw;
-  if(typeof raw==='number'&&raw>25000&&raw<60000){const d=new Date(Math.round((raw-25569)*864e5));if(!isNaN(d.getTime())){d.setHours(12);return d;}}
+  if(typeof raw==='number'&&raw>25000&&raw<60000){
+    const d=new Date(Math.round((raw-25569)*864e5));
+    if(!isNaN(d.getTime())){d.setHours(12);return d;}
+  }
   const s=String(raw).trim();
+  
+  // Tentar DD/MM/YYYY ou DD-MM-YYYY
   const m1=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if(m1)return new Date(`${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}T12:00:00`);
+  if(m1){
+    const d=new Date(`${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}T12:00:00`);
+    if(!isNaN(d.getTime()))return d;
+  }
+  
+  // Tentar YYYY-MM-DD
   const m2=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m2)return new Date(`${m2[1]}-${m2[2]}-${m2[3]}T12:00:00`);
-  const d=new Date(s);return isNaN(d.getTime())?null:d;
+  if(m2){
+    const d=new Date(`${m2[1]}-${m2[2]}-${m2[3]}T12:00:00`);
+    if(!isNaN(d.getTime()))return d;
+  }
+  
+  // Tentar parse genérico
+  const d=new Date(s);
+  return isNaN(d.getTime())?null:d;
 }
 function pNum(v){
   if(typeof v==='number')return v;
-  const s=String(v||'').replace(/\s/g,'');
-  if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s))return parseFloat(s.replace(/\./g,'').replace(',','.'));
+  const s=String(v||'').replace(/\s/g,'').trim();
+  if(!s || s==='') return 0;
+  
+  // BR: 1.234,56
+  if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)){
+    return parseFloat(s.replace(/\./g,'').replace(',','.'));
+  }
+  // US: 1,234.56
+  if(/^\d{1,3}(,\d{3})*(\.\d+)?$/.test(s)){
+    return parseFloat(s.replace(/,/g,''));
+  }
+  // Fallback: remove tudo exceto dígitos, ponto e vírgula
   return parseFloat(s.replace(/[^\d.,-]/g,'').replace(',','.'))||0;
 }
 
@@ -525,19 +562,61 @@ async function parseFile(file){
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true,raw:false});
         const ws=wb.Sheets[wb.SheetNames[0]];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
-        if(rows.length<2){rej('Planilha vazia.');return;}
+        console.log(`Arquivo lido: ${rows.length} linhas`);
+        
+        if(rows.length<2){rej('Planilha vazia ou com < 2 linhas.');return;}
+        
         const r0=rows[0];
         const isH=isNaN(parseFloat(String(r0[0]||'').replace(/[^\d]/g,'')));
+        console.log('Primeira linha é header?', isH);
+        
         const dRows=isH?rows.slice(1):rows;
         const cols=isH?detectCols(r0):{c:0,n:1,d:2,q:3,v:4};
+        
+        console.log(`Processando ${dRows.length} linhas de dados`);
+        
         const out=[];
-        for(const row of dRows){
-          const cod=row[cols.c];if(cod===''||cod==null)continue;
-          const dt=pDate(row[cols.d]);if(!dt)continue;
-          out.push({cliente_codigo:String(cod).trim(),cliente_razao_social:String(row[cols.n]||'').trim(),data_emissao:dt,total_pecas:pNum(row[cols.q]),valor_total:pNum(row[cols.v])});
+        let skipped=0;
+        
+        for(let i=0; i<dRows.length; i++){
+          const row=dRows[i];
+          if(!row || row.length===0) continue;
+          
+          const cod=String(row[cols.c]||'').trim();
+          if(!cod){skipped++; continue;}
+          
+          const dt=pDate(row[cols.d]);
+          if(!dt){
+            console.warn(`Linha ${i+1}: data inválida: "${row[cols.d]}"`);
+            skipped++;
+            continue;
+          }
+          
+          const nome=String(row[cols.n]||'').trim();
+          const qtde=pNum(row[cols.q]);
+          const valor=pNum(row[cols.v]);
+          
+          out.push({
+            cliente_codigo:cod,
+            cliente_razao_social:nome,
+            data_emissao:dt,
+            total_pecas:qtde,
+            valor_total:valor
+          });
         }
+        
+        console.log(`✓ Extraído: ${out.length} registros válidos, ${skipped} linhas ignoradas`);
+        
+        if(!out.length){
+          rej('Nenhum pedido válido encontrado. Verifique as colunas: código do cliente, data e valor.');
+          return;
+        }
+        
         res(out);
-      }catch(err){rej('Erro: '+err.message);}
+      }catch(err){
+        console.error('Erro no parseFile:', err);
+        rej('Erro: '+err.message);
+      }
     };
     r.readAsArrayBuffer(file);
   });
@@ -550,10 +629,25 @@ function makeId(p){
 
 async function save(ps){
   const SZ=490;
-  for(let i=0;i<ps.length;i+=SZ){
-    const b=writeBatch(db);
-    ps.slice(i,i+SZ).forEach(p=>b.set(doc(db,'pedidos',makeId(p)),{...p,data_emissao:p.data_emissao.toISOString(),valor_total:+p.valor_total.toFixed(2)},{merge:true}));
-    await b.commit();
+  try {
+    let total=0;
+    for(let i=0;i<ps.length;i+=SZ){
+      const batch=ps.slice(i,i+SZ);
+      console.log(`📤 Batch ${Math.floor(i/SZ)+1}: enviando ${batch.length} registros (IDs: ${batch.slice(0,2).map(p=>makeId(p)).join(', ')}${batch.length>2?', ...':''})`);
+      const b=writeBatch(db);
+      batch.forEach(p=>{
+        const id=makeId(p);
+        const data={...p,data_emissao:p.data_emissao.toISOString(),valor_total:+p.valor_total.toFixed(2)};
+        b.set(doc(db,'pedidos',id),data,{merge:true});
+      });
+      await b.commit();
+      total+=batch.length;
+      console.log(`✓ Batch concluído (${total}/${ps.length})`);
+    }
+    console.log(`✓ Salvamento concluído: ${total} registros salvos`);
+  }catch(err){
+    console.error('Erro em save():', err);
+    throw new Error('Erro ao salvar no Firebase: '+err.message);
   }
 }
 
@@ -570,15 +664,39 @@ const setFb=(t,msg)=>{const e=document.getElementById('fb');e.className='fb'+(t?
 const setProg=(v)=>{document.getElementById('prog').classList.toggle('on',v>0&&v<100);document.getElementById('pb2').style.width=v+'%';};
 
 async function handleFile(file){
+  console.log('📁 Arquivo recebido:', file.name, file.size, 'bytes');
   setFb('inf','⏳ Lendo arquivo…');setProg(15);
   try{
+    console.log('🔍 Iniciando parse do arquivo...');
     const ps=await parseFile(file);
-    if(!ps.length){setFb('err','Nenhum pedido encontrado. Verifique as colunas da planilha.');setProg(0);return;}
+    console.log(`✓ Parse completo: ${ps.length} registros extraídos`);
+    
+    if(!ps.length){
+      const err='Nenhum pedido encontrado. Verifique as colunas da planilha.';
+      console.error(err);
+      setFb('err',err);
+      setProg(0);
+      return;
+    }
+    
     setFb('inf',`⏳ Enviando ${ps.length} registros…`);setProg(40);
+    console.log('💾 Salvando no Firebase...');
     await save(ps);
-    setProg(100);setFb('ok',`✓ ${ps.length} pedidos importados com sucesso!`);
-    await load();setTimeout(()=>setProg(0),1000);
-  }catch(err){setFb('err',String(err));setProg(0);}
+    console.log('✓ Salvamento concluído');
+    
+    setProg(100);
+    setFb('ok',`✓ ${ps.length} pedidos importados com sucesso!`);
+    
+    console.log('🔄 Recarregando dados...');
+    await load();
+    console.log('✓ Dados recarregados');
+    
+    setTimeout(()=>setProg(0),1000);
+  }catch(err){
+    console.error('❌ Erro no handleFile:', err);
+    setFb('err',String(err));
+    setProg(0);
+  }
 }
 
 const openUp=()=>{document.getElementById('m-up').classList.add('on');setFb('','');};
