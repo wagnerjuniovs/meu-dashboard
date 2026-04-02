@@ -59,7 +59,8 @@ main{flex:1;overflow:hidden;padding:20px 24px;display:grid;grid-template-columns
 .bloco-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 /* PILLS SUMMARY */
 .pills-row{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
-.pill{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;transition:var(--tr)}
+.pill{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;transition:var(--tr);border:1.5px solid transparent;user-select:none}
+.pill.active{border-color:currentColor;box-shadow:0 0 0 3px color-mix(in srgb, currentColor 15%, transparent)}
 .pill.verde{background:var(--green-s);color:#1a8a3c}
 .pill.amarelo{background:var(--yellow-s);color:#b36b00}
 .pill.vermelho{background:var(--red-s);color:#c0251e}
@@ -334,7 +335,8 @@ const STATE = {
   loading: true,
   importRows: [],
   importHeaders: [],
-  colMap: {}
+  colMap: {},
+  pillFilter2: null  // active pill filter for bloco 2: null | 'verde' | 'amarelo' | 'vermelho' | 'sem_recorrencia'
 };
 
 // ═══════════════════════════════════════════════
@@ -539,11 +541,11 @@ function calcularTendencia(ciclos, tipo) {
   } else if (diminuindo) {
     status = lb.menos;
     const m = Math.abs(dist);
-    if (abaixo>=3 && m>0.25) intensidade='crítica';
+    if (abaixo>=3 && m>0.25) intensidade='critica';
     else if (abaixo>=2 || m>0.20) intensidade='forte';
     else if (m>0.12) intensidade='moderada';
     else intensidade='leve';
-    alerta = (intensidade==='crítica'||intensidade==='forte') ? 'agir agora' : 'atenção';
+    alerta = (intensidade==='critica'||intensidade==='forte') ? 'agir agora' : 'atenção';
   } else {
     status = lb.estaveil;
     intensidade = 'leve';
@@ -676,6 +678,11 @@ function renderBloco1() {
   }).join('');
 }
 
+function setPillFilter2(status) {
+  STATE.pillFilter2 = STATE.pillFilter2 === status ? null : status;
+  renderBloco2();
+}
+
 // ═══════════════════════════════════════════════
 // RENDER BLOCO 2 — Termômetro
 // ═══════════════════════════════════════════════
@@ -683,6 +690,20 @@ function renderBloco2() {
   const el = document.getElementById('list2');
   const pills = document.getElementById('pills2');
   const q = document.getElementById('search2').value;
+  const pf = STATE.pillFilter2;
+
+  // Count always from full unfiltered set
+  const cnt = {verde:0,amarelo:0,vermelho:0,sem_recorrencia:0};
+  getUnidades().forEach(u => {
+    const sr = calcularStatusRecompra(u.diasSemComprar, u.recorrenciaDias);
+    cnt[sr.status] = (cnt[sr.status]||0)+1;
+  });
+  pills.innerHTML = `
+    <div class="pill verde ${pf==='verde'?'active':''}" onclick="setPillFilter2('verde')"><span class="dot"></span>${cnt.verde} Ok</div>
+    <div class="pill amarelo ${pf==='amarelo'?'active':''}" onclick="setPillFilter2('amarelo')"><span class="dot"></span>${cnt.amarelo} Ligar</div>
+    <div class="pill vermelho ${pf==='vermelho'?'active':''}" onclick="setPillFilter2('vermelho')"><span class="dot"></span>${cnt.vermelho} Atrasado</div>
+    <div class="pill neutro ${pf==='sem_recorrencia'?'active':''}" onclick="setPillFilter2('sem_recorrencia')"><span class="dot"></span>${cnt.sem_recorrencia} Sem dados</div>`;
+
   let units = getUnidades();
   units = filterUnidades(units, q);
   // Enrich with status
@@ -690,17 +711,8 @@ function renderBloco2() {
     const sr = calcularStatusRecompra(u.diasSemComprar, u.recorrenciaDias);
     return {...u, sr};
   });
-  // Count for pills
-  const cnt = {verde:0,amarelo:0,vermelho:0,sem_recorrencia:0};
-  getUnidades().forEach(u => {
-    const sr = calcularStatusRecompra(u.diasSemComprar, u.recorrenciaDias);
-    cnt[sr.status] = (cnt[sr.status]||0)+1;
-  });
-  pills.innerHTML = `
-    <div class="pill verde"><span class="dot"></span>${cnt.verde} Ok</div>
-    <div class="pill amarelo"><span class="dot"></span>${cnt.amarelo} Ligar</div>
-    <div class="pill vermelho"><span class="dot"></span>${cnt.vermelho} Atrasado</div>
-    <div class="pill neutro"><span class="dot"></span>${cnt.sem_recorrencia} Sem dados</div>`;
+  // Apply pill filter if active
+  if (pf) units = units.filter(u => u.sr.status === pf);
   // Sort: vermelho first, then amarelo, then verde, then sem
   const order = {vermelho:0,amarelo:1,verde:2,sem_recorrencia:3};
   units.sort((a,b)=>(order[a.sr.status]||3)-(order[b.sr.status]||3));
